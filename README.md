@@ -8,10 +8,9 @@ A fixed income portfolio construction system that replicates an investment grade
 
 | | |
 |--|--|
-| Live Dashboard | [sara-iqbal.github.io/bond-index-rebalancer](https://sara-iqbal.github.io/bond-index-rebalancer) |
-| Google Colab Notebook | [Open in Colab](https://colab.research.google.com/drive/YOUR_COLAB_LINK) |
-| LinkedIn | [Sara Iqbal](https://linkedin.com/in/sara-iqbal) |
-| GitHub Portfolio | [github.com/sara-iqbal](https://github.com/sara-iqbal) |
+| Live Dashboard | https://sara-iqbal.github.io/Bond-Index-Replication-Rebalancing-Engine/ |
+| Google Colab Notebook | https://drive.google.com/file/d/11QFcRNmMv9k_OAoPXtLklHGbazWAvzQ2/view?usp=sharing |
+| LinkedIn | https://www.linkedin.com/in/saraiqbaldata0602/ |
 
 ---
 
@@ -161,18 +160,7 @@ Sector, rating, and maturity weights are taken from the iShares iBoxx USD Liquid
 
 Sara Iqbal  
 MSc Data Science · B.Tech Artificial Intelligence and Machine Learning  
-London, UK
 
-[LinkedIn](https://linkedin.com/in/sara-iqbal) · [GitHub](https://github.com/sara-iqbal)
+
 
 ---
-
-## Other projects
-
-| Project | Description | Link |
-|---------|-------------|------|
-| Nexus Wealth Optimizer | Basel III RWA engine, RoRWA pricing tool, LCR monitoring, live Streamlit app | [Live App](https://nexus-wealth-optimizer-f2knflxnmdrkwomil9gnnf.streamlit.app/) |
-| Real-Time Fraud Detection | XGBoost and Isolation Forest ensemble, ROC-AUC 97.4%, SHAP explainability | [GitHub](https://github.com/sara-iqbal) |
-| Algorithmic Trading Signal Engine | LSTM and Transformer ensemble, Sharpe 1.42, 38.4% outperformance vs buy-and-hold | [GitHub](https://github.com/sara-iqbal) |
-| Financial News Sentiment Analyser | FinBERT fine-tuned on Financial PhraseBank, F1 Macro 0.861, ROC-AUC 0.941 | [GitHub](https://github.com/sara-iqbal) |
-| End-to-End ETL Pipeline | PySpark, XGBoost, SQL analytics, Google Looker Studio, ROC-AUC 0.993 | [Dashboard](https://lookerstudio.google.com/reporting/b7d766bb-2a9b-47dd-a535-28b2a1906ee5) |
