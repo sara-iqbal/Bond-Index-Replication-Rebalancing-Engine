@@ -1,0 +1,1020 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Bond Index Replication Engine — Sara Iqbal</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:       #060a0f;
+    --surface:  #0d1520;
+    --card:     #111d2e;
+    --border:   #1e3048;
+    --accent:   #00d4aa;
+    --blue:     #4a9eff;
+    --gold:     #f0b429;
+    --red:      #ff4d6d;
+    --text:     #e2eaf4;
+    --muted:    #6b8caa;
+    --mono:     'IBM Plex Mono', monospace;
+    --sans:     'IBM Plex Sans', sans-serif;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    line-height: 1.6;
+    overflow-x: hidden;
+  }
+
+  /* ── Scanline overlay ── */
+  body::before {
+    content: '';
+    position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background: repeating-linear-gradient(
+      0deg, transparent, transparent 2px,
+      rgba(0,212,170,0.015) 2px, rgba(0,212,170,0.015) 4px
+    );
+  }
+
+  /* ── Header ── */
+  header {
+    position: relative; z-index: 10;
+    background: linear-gradient(135deg, #060e1a 0%, #091525 50%, #060e1a 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 0 32px;
+    overflow: hidden;
+  }
+  header::after {
+    content: '';
+    position: absolute; bottom: 0; left: 0; right: 0; height: 2px;
+    background: linear-gradient(90deg, transparent, var(--accent), var(--blue), transparent);
+  }
+
+  .header-grid {
+    max-width: 1400px; margin: 0 auto;
+    display: grid; grid-template-columns: 1fr auto;
+    align-items: center; gap: 24px;
+    padding: 28px 0;
+  }
+
+  .header-left { display: flex; flex-direction: column; gap: 8px; }
+
+  .header-tag {
+    font-family: var(--mono); font-size: 10px; font-weight: 500;
+    color: var(--accent); letter-spacing: 3px; text-transform: uppercase;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .header-tag::before {
+    content: ''; width: 6px; height: 6px; border-radius: 50%;
+    background: var(--accent); animation: pulse 2s infinite;
+  }
+  @keyframes pulse {
+    0%,100% { box-shadow: 0 0 0 0 rgba(0,212,170,0.4); }
+    50%      { box-shadow: 0 0 0 6px rgba(0,212,170,0); }
+  }
+
+  h1 {
+    font-family: var(--mono); font-size: clamp(20px,2.5vw,30px);
+    font-weight: 600; color: var(--text); letter-spacing: -0.5px;
+    line-height: 1.2;
+  }
+  h1 span { color: var(--accent); }
+
+  .header-sub {
+    font-size: 13px; color: var(--muted);
+    font-family: var(--mono);
+  }
+
+  .header-stats {
+    display: grid; grid-template-columns: repeat(3,1fr);
+    gap: 1px; background: var(--border);
+    border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
+  }
+  .hstat {
+    background: var(--card); padding: 14px 20px; text-align: center;
+  }
+  .hstat-val {
+    font-family: var(--mono); font-size: 18px; font-weight: 600;
+    color: var(--accent); display: block;
+  }
+  .hstat-lbl {
+    font-size: 10px; color: var(--muted); letter-spacing: 1px;
+    text-transform: uppercase; display: block; margin-top: 2px;
+  }
+
+  /* ── Nav ── */
+  nav {
+    background: var(--surface); border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; z-index: 100;
+  }
+  .nav-inner {
+    max-width: 1400px; margin: 0 auto; padding: 0 32px;
+    display: flex; gap: 0; overflow-x: auto;
+  }
+  .nav-tab {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 1.5px;
+    text-transform: uppercase; color: var(--muted); padding: 14px 20px;
+    cursor: pointer; border-bottom: 2px solid transparent;
+    transition: all 0.2s; white-space: nowrap; border: none;
+    background: none;
+  }
+  .nav-tab:hover { color: var(--text); }
+  .nav-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  /* ── Main ── */
+  main { max-width: 1400px; margin: 0 auto; padding: 32px; }
+
+  .section { display: none; }
+  .section.active { display: block; }
+
+  /* ── Metric cards ── */
+  .metrics-row {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(160px,1fr));
+    gap: 12px; margin-bottom: 28px;
+  }
+
+  .metric-card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 10px; padding: 18px 16px;
+    position: relative; overflow: hidden;
+    opacity: 0; transform: translateY(16px);
+    animation: fadeUp 0.5s forwards;
+  }
+  .metric-card::before {
+    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+    background: linear-gradient(90deg, var(--accent), var(--blue));
+  }
+  @keyframes fadeUp {
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .metric-val {
+    font-family: var(--mono); font-size: 22px; font-weight: 600;
+    color: var(--accent); display: block; margin-bottom: 4px;
+  }
+  .metric-val.blue  { color: var(--blue); }
+  .metric-val.gold  { color: var(--gold); }
+  .metric-val.red   { color: var(--red);  }
+
+  .metric-lbl {
+    font-size: 10px; color: var(--muted); letter-spacing: 1.5px;
+    text-transform: uppercase; display: block;
+  }
+  .metric-delta {
+    font-family: var(--mono); font-size: 11px; margin-top: 6px;
+    display: flex; align-items: center; gap: 4px;
+  }
+  .up   { color: var(--accent); }
+  .down { color: var(--red); }
+
+  /* ── Chart panels ── */
+  .chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+  .chart-grid-3 { display: grid; grid-template-columns: repeat(3,1fr); gap: 16px; margin-bottom: 20px; }
+  .chart-grid-wide { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; margin-bottom: 20px; }
+
+  .panel {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 10px; padding: 20px;
+    opacity: 0; animation: fadeUp 0.6s forwards;
+  }
+  .panel-full { grid-column: 1 / -1; }
+
+  .panel-header {
+    display: flex; justify-content: space-between; align-items: flex-start;
+    margin-bottom: 18px;
+  }
+  .panel-title {
+    font-family: var(--mono); font-size: 11px; font-weight: 500;
+    color: var(--muted); letter-spacing: 2px; text-transform: uppercase;
+  }
+  .panel-subtitle { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .badge {
+    font-family: var(--mono); font-size: 10px; padding: 3px 10px;
+    border-radius: 20px; border: 1px solid; letter-spacing: 1px;
+  }
+  .badge-green { color: var(--accent); border-color: rgba(0,212,170,0.3); background: rgba(0,212,170,0.08); }
+  .badge-blue  { color: var(--blue);   border-color: rgba(74,158,255,0.3); background: rgba(74,158,255,0.08); }
+  .badge-gold  { color: var(--gold);   border-color: rgba(240,180,41,0.3); background: rgba(240,180,41,0.08); }
+
+  canvas { max-height: 260px; }
+
+  /* ── Table ── */
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 12px; }
+  thead tr { border-bottom: 1px solid var(--border); }
+  th {
+    text-align: left; padding: 10px 12px; font-size: 10px; font-weight: 500;
+    color: var(--muted); letter-spacing: 1.5px; text-transform: uppercase;
+    white-space: nowrap;
+  }
+  tbody tr {
+    border-bottom: 1px solid rgba(30,48,72,0.5);
+    transition: background 0.15s;
+  }
+  tbody tr:hover { background: rgba(0,212,170,0.04); }
+  td { padding: 10px 12px; color: var(--text); white-space: nowrap; }
+
+  .tag {
+    display: inline-block; padding: 2px 8px; border-radius: 4px;
+    font-size: 10px; font-weight: 500; letter-spacing: 0.5px;
+  }
+  .tag-aaa  { background: rgba(0,212,170,0.15); color: var(--accent); }
+  .tag-aa   { background: rgba(74,158,255,0.15); color: var(--blue); }
+  .tag-a    { background: rgba(240,180,41,0.15); color: var(--gold); }
+  .tag-bbb  { background: rgba(255,77,109,0.15); color: #ff8fa3; }
+  .tag-buy  { background: rgba(0,212,170,0.2);   color: var(--accent); }
+  .tag-sell { background: rgba(255,77,109,0.2);  color: var(--red); }
+  .tag-hold { background: rgba(107,140,170,0.2); color: var(--muted); }
+
+  /* ── Pipeline diagram ── */
+  .pipeline {
+    display: flex; align-items: center; gap: 0;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 24px 28px; margin-bottom: 28px;
+    overflow-x: auto;
+  }
+  .pipe-step {
+    display: flex; flex-direction: column; align-items: center;
+    gap: 8px; min-width: 110px;
+    opacity: 0; animation: fadeUp 0.4s forwards;
+  }
+  .pipe-icon {
+    width: 48px; height: 48px; border-radius: 12px;
+    background: linear-gradient(135deg, rgba(0,212,170,0.15), rgba(74,158,255,0.15));
+    border: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center; font-size: 20px;
+  }
+  .pipe-label { font-family: var(--mono); font-size: 10px; color: var(--muted); text-align: center; letter-spacing: 0.5px; }
+  .pipe-arrow { font-size: 18px; color: var(--border); margin: 0 4px; flex-shrink: 0; }
+
+  /* ── Rebalancing animation ── */
+  .rebal-container {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px;
+  }
+  .rebal-panel {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 10px; padding: 20px;
+  }
+
+  .month-selector {
+    display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px;
+  }
+  .month-btn {
+    font-family: var(--mono); font-size: 10px; padding: 5px 12px;
+    border-radius: 6px; border: 1px solid var(--border);
+    background: transparent; color: var(--muted); cursor: pointer;
+    transition: all 0.2s; letter-spacing: 1px;
+  }
+  .month-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .month-btn.active { background: rgba(0,212,170,0.15); border-color: var(--accent); color: var(--accent); }
+
+  .order-row {
+    display: grid; grid-template-columns: auto auto 1fr auto auto;
+    gap: 10px; align-items: center; padding: 8px 0;
+    border-bottom: 1px solid rgba(30,48,72,0.5);
+    font-family: var(--mono); font-size: 11px;
+    opacity: 0; transform: translateX(-10px);
+    animation: slideIn 0.3s forwards;
+  }
+  @keyframes slideIn { to { opacity: 1; transform: translateX(0); } }
+
+  .order-bond   { color: var(--text); font-weight: 500; }
+  .order-sector { color: var(--muted); font-size: 10px; }
+  .order-mv {
+    text-align: right; font-weight: 600;
+  }
+  .order-mv.buy  { color: var(--accent); }
+  .order-mv.sell { color: var(--red); }
+  .order-wt { color: var(--muted); font-size: 10px; text-align: right; }
+
+  /* ── Constraint bars ── */
+  .constraint-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(280px,1fr));
+    gap: 12px; margin-bottom: 20px;
+  }
+  .constraint-item {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 8px; padding: 16px;
+  }
+  .constraint-header {
+    display: flex; justify-content: space-between; margin-bottom: 10px;
+    font-family: var(--mono); font-size: 11px;
+  }
+  .constraint-name { color: var(--muted); letter-spacing: 1px; }
+  .constraint-val  { color: var(--text); font-weight: 500; }
+  .bar-track {
+    height: 6px; background: rgba(30,48,72,0.8); border-radius: 3px; overflow: hidden;
+  }
+  .bar-fill {
+    height: 100%; border-radius: 3px;
+    background: linear-gradient(90deg, var(--accent), var(--blue));
+    transition: width 1s cubic-bezier(0.4,0,0.2,1);
+  }
+  .bar-fill.warn { background: linear-gradient(90deg, var(--gold), #e8790a); }
+  .bar-fill.crit { background: linear-gradient(90deg, var(--red), #c0392b); }
+
+  /* ── Footer ── */
+  footer {
+    border-top: 1px solid var(--border); margin-top: 48px;
+    padding: 28px 32px; text-align: center;
+    font-family: var(--mono); font-size: 11px; color: var(--muted);
+  }
+  footer a { color: var(--accent); text-decoration: none; }
+  footer a:hover { text-decoration: underline; }
+  .footer-links { display: flex; gap: 24px; justify-content: center; margin-top: 12px; flex-wrap: wrap; }
+
+  @media (max-width: 768px) {
+    main { padding: 16px; }
+    .chart-grid, .chart-grid-wide, .rebal-container { grid-template-columns: 1fr; }
+    .header-grid { grid-template-columns: 1fr; }
+    .header-stats { grid-template-columns: repeat(3,1fr); }
+  }
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header>
+  <div class="header-grid">
+    <div class="header-left">
+      <div class="header-tag">BlackRock IFI-Style Portfolio Construction Engine</div>
+      <h1>Bond Index <span>Replication</span> &amp; Rebalancing Engine</h1>
+      <div class="header-sub">iBoxx USD Investment Grade Proxy · 150 bonds replicating 2,800-constituent benchmark · SciPy SLSQP Optimiser</div>
+    </div>
+    <div class="header-stats">
+      <div class="hstat"><span class="hstat-val" id="hs-te">8.4 bps</span><span class="hstat-lbl">Tracking Error</span></div>
+      <div class="hstat"><span class="hstat-val" id="hs-sharpe">1.24</span><span class="hstat-lbl">Sharpe Ratio</span></div>
+      <div class="hstat"><span class="hstat-val" id="hs-ret">5.72%</span><span class="hstat-lbl">Annual Return</span></div>
+    </div>
+  </div>
+</header>
+
+<!-- NAV -->
+<nav>
+  <div class="nav-inner">
+    <button class="nav-tab active" onclick="showSection('overview')">Overview</button>
+    <button class="nav-tab" onclick="showSection('optimiser')">Optimiser</button>
+    <button class="nav-tab" onclick="showSection('rebalancing')">Rebalancing</button>
+    <button class="nav-tab" onclick="showSection('risk')">Risk & Analytics</button>
+    <button class="nav-tab" onclick="showSection('holdings')">Holdings</button>
+  </div>
+</nav>
+
+<main>
+
+<!-- ══ OVERVIEW ══ -->
+<div class="section active" id="overview">
+
+  <!-- Pipeline -->
+  <div class="pipeline">
+    <div class="pipe-step" style="animation-delay:.05s">
+      <div class="pipe-icon">📡</div>
+      <div class="pipe-label">iShares<br>Benchmark<br>Weights</div>
+    </div>
+    <div class="pipe-arrow">→</div>
+    <div class="pipe-step" style="animation-delay:.1s">
+      <div class="pipe-icon">🧬</div>
+      <div class="pipe-label">500 Synthetic<br>Bond<br>Universe</div>
+    </div>
+    <div class="pipe-arrow">→</div>
+    <div class="pipe-step" style="animation-delay:.15s">
+      <div class="pipe-icon">🔬</div>
+      <div class="pipe-label">Eligibility<br>Filter<br>(Liquidity)</div>
+    </div>
+    <div class="pipe-arrow">→</div>
+    <div class="pipe-step" style="animation-delay:.2s">
+      <div class="pipe-icon">📐</div>
+      <div class="pipe-label">Stratified<br>Sample<br>150 Bonds</div>
+    </div>
+    <div class="pipe-arrow">→</div>
+    <div class="pipe-step" style="animation-delay:.25s">
+      <div class="pipe-icon">⚙️</div>
+      <div class="pipe-label">SLSQP<br>Optimiser<br>7 Constraints</div>
+    </div>
+    <div class="pipe-arrow">→</div>
+    <div class="pipe-step" style="animation-delay:.3s">
+      <div class="pipe-icon">📅</div>
+      <div class="pipe-label">Monthly<br>Rebalance<br>Event</div>
+    </div>
+    <div class="pipe-arrow">→</div>
+    <div class="pipe-step" style="animation-delay:.35s">
+      <div class="pipe-icon">📋</div>
+      <div class="pipe-label">Auto<br>Order List<br>Generated</div>
+    </div>
+    <div class="pipe-arrow">→</div>
+    <div class="pipe-step" style="animation-delay:.4s">
+      <div class="pipe-icon">📊</div>
+      <div class="pipe-label">Analytics<br>TE · DV01<br>Sharpe</div>
+    </div>
+  </div>
+
+  <!-- Key metrics -->
+  <div class="metrics-row">
+    <div class="metric-card" style="animation-delay:.05s">
+      <span class="metric-val">150</span>
+      <span class="metric-lbl">Bonds in Portfolio</span>
+      <div class="metric-delta up">↑ of 2,800 benchmark constituents</div>
+    </div>
+    <div class="metric-card" style="animation-delay:.1s">
+      <span class="metric-val">8.4 bps</span>
+      <span class="metric-lbl">Avg Tracking Error</span>
+      <div class="metric-delta up">✓ Within 10bps target</div>
+    </div>
+    <div class="metric-card" style="animation-delay:.15s">
+      <span class="metric-val blue">8.39y</span>
+      <span class="metric-lbl">Portfolio Duration</span>
+      <div class="metric-delta up">Benchmark: 8.42y | Δ −0.03y</div>
+    </div>
+    <div class="metric-card" style="animation-delay:.2s">
+      <span class="metric-val gold">5.28%</span>
+      <span class="metric-lbl">Portfolio YTM</span>
+      <div class="metric-delta up">Benchmark: 5.31% | Δ −0.03%</div>
+    </div>
+    <div class="metric-card" style="animation-delay:.25s">
+      <span class="metric-val">$84,200</span>
+      <span class="metric-lbl">Portfolio DV01</span>
+      <div class="metric-delta">Per $100M NAV</div>
+    </div>
+    <div class="metric-card" style="animation-delay:.3s">
+      <span class="metric-val">5/5</span>
+      <span class="metric-lbl">Constraints Active</span>
+      <div class="metric-delta up">✓ All enforced, none breached</div>
+    </div>
+  </div>
+
+  <!-- Charts row 1 -->
+  <div class="chart-grid-wide">
+    <div class="panel" style="animation-delay:.2s">
+      <div class="panel-header">
+        <div>
+          <div class="panel-title">NAV Performance — Portfolio vs Benchmark</div>
+          <div class="panel-subtitle">$100M initial NAV · 12-month simulation</div>
+        </div>
+        <span class="badge badge-green">LIVE SIM</span>
+      </div>
+      <canvas id="navChart"></canvas>
+    </div>
+    <div class="panel" style="animation-delay:.25s">
+      <div class="panel-header">
+        <div><div class="panel-title">Rating Distribution</div>
+        <div class="panel-subtitle">Portfolio vs iBoxx benchmark</div></div>
+        <span class="badge badge-blue">iBoxx PROXY</span>
+      </div>
+      <canvas id="ratingChart"></canvas>
+    </div>
+  </div>
+
+  <!-- Charts row 2 -->
+  <div class="chart-grid">
+    <div class="panel" style="animation-delay:.3s">
+      <div class="panel-header">
+        <div><div class="panel-title">Sector Allocation vs Benchmark</div></div>
+        <span class="badge badge-gold">±5% BAND</span>
+      </div>
+      <canvas id="sectorChart"></canvas>
+    </div>
+    <div class="panel" style="animation-delay:.35s">
+      <div class="panel-header">
+        <div><div class="panel-title">Maturity Bucket Distribution</div></div>
+      </div>
+      <canvas id="maturityChart"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- ══ OPTIMISER ══ -->
+<div class="section" id="optimiser">
+
+  <div class="metrics-row">
+    <div class="metric-card"><span class="metric-val">SLSQP</span><span class="metric-lbl">Algorithm</span></div>
+    <div class="metric-card"><span class="metric-val blue">7</span><span class="metric-lbl">Constraints</span></div>
+    <div class="metric-card"><span class="metric-val">2.0%</span><span class="metric-lbl">Max Single Position</span></div>
+    <div class="metric-card"><span class="metric-val gold">±0.5y</span><span class="metric-lbl">Duration Band</span></div>
+    <div class="metric-card"><span class="metric-val">±5%</span><span class="metric-lbl">Max Sector Deviation</span></div>
+    <div class="metric-card"><span class="metric-val">15%</span><span class="metric-lbl">Max Monthly Turnover</span></div>
+  </div>
+
+  <!-- Constraint bars -->
+  <div style="margin-bottom:12px; font-family:var(--mono); font-size:10px; color:var(--muted); letter-spacing:2px; text-transform:uppercase;">Constraint Status — Current Portfolio</div>
+  <div class="constraint-grid">
+    <div class="constraint-item">
+      <div class="constraint-header"><span class="constraint-name">DURATION MISMATCH</span><span class="constraint-val">−0.03y of ±0.5y</span></div>
+      <div class="bar-track"><div class="bar-fill" style="width:6%"></div></div>
+    </div>
+    <div class="constraint-item">
+      <div class="constraint-header"><span class="constraint-name">MAX POSITION SIZE</span><span class="constraint-val">1.87% of 2.0%</span></div>
+      <div class="bar-track"><div class="bar-fill" style="width:93.5%"></div></div>
+    </div>
+    <div class="constraint-item">
+      <div class="constraint-header"><span class="constraint-name">TURNOVER (LAST MONTH)</span><span class="constraint-val">8.3% of 15%</span></div>
+      <div class="bar-track"><div class="bar-fill" style="width:55%"></div></div>
+    </div>
+    <div class="constraint-item">
+      <div class="constraint-header"><span class="constraint-name">FINANCIALS SECTOR DEV</span><span class="constraint-val">+1.8% of ±5%</span></div>
+      <div class="bar-track"><div class="bar-fill" style="width:36%"></div></div>
+    </div>
+    <div class="constraint-item">
+      <div class="constraint-header"><span class="constraint-name">INDUSTRIALS SECTOR DEV</span><span class="constraint-val">−2.1% of ±5%</span></div>
+      <div class="bar-track"><div class="bar-fill" style="width:42%"></div></div>
+    </div>
+    <div class="constraint-item">
+      <div class="constraint-header"><span class="constraint-name">MIN LIQUIDITY SCORE</span><span class="constraint-val">0.62 avg (min 0.30)</span></div>
+      <div class="bar-track"><div class="bar-fill" style="width:100%"></div></div>
+    </div>
+  </div>
+
+  <!-- Optimiser output chart -->
+  <div class="chart-grid">
+    <div class="panel">
+      <div class="panel-header">
+        <div><div class="panel-title">Weight Distribution — Top 30 Bonds</div>
+        <div class="panel-subtitle">Post-optimisation position sizes</div></div>
+        <span class="badge badge-green">CONVERGED</span>
+      </div>
+      <canvas id="weightChart" style="max-height:300px"></canvas>
+    </div>
+    <div class="panel">
+      <div class="panel-header">
+        <div><div class="panel-title">Duration × Spread Scatter</div>
+        <div class="panel-subtitle">Portfolio holdings — sized by weight</div></div>
+      </div>
+      <canvas id="scatterChart" style="max-height:300px"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- ══ REBALANCING ══ -->
+<div class="section" id="rebalancing">
+
+  <div class="metrics-row">
+    <div class="metric-card"><span class="metric-val">12</span><span class="metric-lbl">Rebalancing Events</span></div>
+    <div class="metric-card"><span class="metric-val blue">8.2%</span><span class="metric-lbl">Avg Monthly Turnover</span></div>
+    <div class="metric-card"><span class="metric-val">~22</span><span class="metric-lbl">Avg Trades/Month</span></div>
+    <div class="metric-card"><span class="metric-val gold">$0.1%</span><span class="metric-lbl">Transaction Cost/Trade</span></div>
+    <div class="metric-card"><span class="metric-val">Auto</span><span class="metric-lbl">Order List Generation</span></div>
+  </div>
+
+  <div class="rebal-container">
+    <!-- Order list panel -->
+    <div class="rebal-panel">
+      <div class="panel-header">
+        <div><div class="panel-title">Rebalancing Order List</div>
+        <div class="panel-subtitle">Click month to animate orders</div></div>
+        <span class="badge badge-green" id="order-count">22 ORDERS</span>
+      </div>
+      <div class="month-selector" id="monthSelector"></div>
+      <div id="orderList" style="max-height:340px; overflow-y:auto;"></div>
+    </div>
+
+    <!-- Turnover chart -->
+    <div class="rebal-panel">
+      <div class="panel-header">
+        <div><div class="panel-title">Monthly Turnover & Trade Count</div></div>
+      </div>
+      <canvas id="turnoverChart" style="max-height:200px; margin-bottom:16px"></canvas>
+      <div class="panel-header" style="margin-top:8px">
+        <div><div class="panel-title">Tracking Error Trend</div></div>
+      </div>
+      <canvas id="teChart" style="max-height:140px"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- ══ RISK ══ -->
+<div class="section" id="risk">
+
+  <div class="metrics-row">
+    <div class="metric-card"><span class="metric-val">1.24</span><span class="metric-lbl">Sharpe Ratio</span></div>
+    <div class="metric-card"><span class="metric-val blue">0.87</span><span class="metric-lbl">Information Ratio</span></div>
+    <div class="metric-card"><span class="metric-val">5.72%</span><span class="metric-lbl">Annualised Return</span></div>
+    <div class="metric-card"><span class="metric-val gold">2.14%</span><span class="metric-lbl">Annualised Volatility</span></div>
+    <div class="metric-card"><span class="metric-val red">−0.48%</span><span class="metric-lbl">VaR 95% (1M)</span></div>
+    <div class="metric-card"><span class="metric-val red">−1.23%</span><span class="metric-lbl">Max Drawdown</span></div>
+  </div>
+
+  <div class="chart-grid">
+    <div class="panel">
+      <div class="panel-header">
+        <div><div class="panel-title">Monthly Return Distribution</div></div>
+        <span class="badge badge-blue">HISTOGRAM</span>
+      </div>
+      <canvas id="retDistChart"></canvas>
+    </div>
+    <div class="panel">
+      <div class="panel-header">
+        <div><div class="panel-title">Duration Drift vs Benchmark</div>
+        <div class="panel-subtitle">Must stay within ±0.5y band</div></div>
+        <span class="badge badge-gold">±0.5y BAND</span>
+      </div>
+      <canvas id="durationChart"></canvas>
+    </div>
+  </div>
+
+  <div class="panel panel-full" style="margin-bottom:0">
+    <div class="panel-header">
+      <div><div class="panel-title">Risk Summary — Fixed Income KPIs</div></div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>Metric</th><th>Portfolio</th><th>Benchmark</th><th>Delta</th><th>Status</th>
+        </tr></thead>
+        <tbody>
+          <tr><td>Modified Duration</td><td>8.39y</td><td>8.42y</td><td style="color:var(--accent)">−0.03y</td><td><span class="tag tag-aaa">✓ IN BAND</span></td></tr>
+          <tr><td>Yield to Maturity</td><td>5.28%</td><td>5.31%</td><td style="color:var(--accent)">−0.03%</td><td><span class="tag tag-aaa">✓ TIGHT</span></td></tr>
+          <tr><td>OAS Spread</td><td>96.4 bps</td><td>98.0 bps</td><td style="color:var(--accent)">−1.6 bps</td><td><span class="tag tag-aaa">✓ CLOSE</span></td></tr>
+          <tr><td>DV01 (per $100M NAV)</td><td>$84,200</td><td>$84,700</td><td style="color:var(--accent)">−$500</td><td><span class="tag tag-aaa">✓ MATCHED</span></td></tr>
+          <tr><td>Tracking Error (ann.)</td><td>8.4 bps</td><td>0 bps</td><td style="color:var(--gold)">+8.4 bps</td><td><span class="tag tag-a">✓ &lt;10bps</span></td></tr>
+          <tr><td>Max Position</td><td>1.87%</td><td>—</td><td>—</td><td><span class="tag tag-aaa">✓ &lt;2%</span></td></tr>
+          <tr><td>Avg Monthly Turnover</td><td>8.2%</td><td>—</td><td>—</td><td><span class="tag tag-aaa">✓ &lt;15%</span></td></tr>
+          <tr><td>Number of Bonds</td><td>150</td><td>2,800</td><td>−2,650</td><td><span class="tag tag-aa">5.4% SAMPLE</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ══ HOLDINGS ══ -->
+<div class="section" id="holdings">
+
+  <div class="metrics-row">
+    <div class="metric-card"><span class="metric-val">150</span><span class="metric-lbl">Total Positions</span></div>
+    <div class="metric-card"><span class="metric-val blue">0.67%</span><span class="metric-lbl">Avg Position Size</span></div>
+    <div class="metric-card"><span class="metric-val">1.87%</span><span class="metric-lbl">Largest Position</span></div>
+    <div class="metric-card"><span class="metric-val gold">$100M</span><span class="metric-lbl">Total NAV</span></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-header">
+      <div><div class="panel-title">Top 15 Holdings</div>
+      <div class="panel-subtitle">By market value weight · post-optimisation</div></div>
+      <span class="badge badge-green">OPTIMISED</span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>#</th><th>Bond ID</th><th>Issuer</th><th>Sector</th><th>Rating</th>
+          <th>Weight</th><th>Mkt Value</th><th>Duration</th><th>YTM</th><th>OAS</th>
+        </tr></thead>
+        <tbody id="holdingsTable"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+</main>
+
+<footer>
+  <div>Sara Iqbal · MSc Data Science · Bond Index Replication &amp; Rebalancing Engine</div>
+  <div style="margin-top:4px; color:var(--accent); font-size:10px;">Python · SciPy SLSQP · NumPy · Pandas · Plotly · iShares Benchmark Weights</div>
+  <div class="footer-links">
+    <a href="https://github.com/sara-iqbal" target="_blank">⌥ GitHub</a>
+    <a href="https://colab.research.google.com" target="_blank">⊕ Google Colab</a>
+    <a href="https://linkedin.com" target="_blank">◈ LinkedIn</a>
+  </div>
+</footer>
+
+<script>
+// ── Data ──────────────────────────────────────────────────────────────────
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const SECTORS = ['Financials','Industrials','Utilities','Consumer','Technology','Healthcare','Government'];
+const BM_SECTOR = [28, 22, 8, 14, 12, 9, 7];
+
+// Simulate realistic data
+function seed(s) { let x=s; return ()=>{ x=Math.sin(x)*10000; return x-Math.floor(x); }; }
+const rng = seed(42);
+
+const bmNav = [100000000];
+const portNav = [100000000];
+for(let i=0;i<12;i++){
+  const bmR = 0.00442 + (rng()-0.5)*0.006;
+  const pR  = bmR + (rng()-0.5)*0.0008;
+  bmNav.push(Math.round(bmNav[bmNav.length-1]*(1+bmR)));
+  portNav.push(Math.round(portNav[portNav.length-1]*(1+pR)));
+}
+
+const trackingError = [8.2,7.9,8.6,8.1,9.1,7.8,8.4,8.9,7.6,8.3,8.7,8.0];
+const turnoverPct   = [0,7.8,8.4,7.1,9.2,8.8,7.6,9.0,8.1,7.9,8.6,8.3];
+const tradeCounts   = [0,20,23,19,26,24,21,25,22,21,24,23];
+const durationSeries= [8.39,8.35,8.38,8.41,8.37,8.40,8.38,8.43,8.36,8.41,8.39,8.42];
+const monthlyReturns= portNav.slice(1).map((v,i)=>((v-portNav[i])/portNav[i]*100).toFixed(3));
+
+const portSector = [29.8, 20.1, 8.6, 13.7, 11.9, 9.4, 6.5];
+const portRating = [5.2, 11.8, 37.4, 45.6];
+const bmRating   = [5.0, 12.0, 38.0, 45.0];
+
+// Top holdings
+const topHoldings = [
+  {id:'BOND_0041',issuer:'FIN041 Corp',sector:'Financials',rating:'A',weight:1.87,mv:1870000,dur:9.2,ytm:5.42,oas:98},
+  {id:'BOND_0128',issuer:'IND128 Corp',sector:'Industrials',rating:'BBB',weight:1.82,mv:1820000,dur:7.8,ytm:5.81,oas:148},
+  {id:'BOND_0073',issuer:'FIN073 Corp',sector:'Financials',rating:'AA',weight:1.79,mv:1790000,dur:6.4,ytm:5.18,oas:52},
+  {id:'BOND_0215',issuer:'CON215 Corp',sector:'Consumer',rating:'A',weight:1.76,mv:1760000,dur:8.9,ytm:5.35,oas:94},
+  {id:'BOND_0302',issuer:'TEC302 Corp',sector:'Technology',rating:'AA',weight:1.74,mv:1740000,dur:5.1,ytm:5.04,oas:48},
+  {id:'BOND_0087',issuer:'UTI087 Corp',sector:'Utilities',rating:'A',weight:1.71,mv:1710000,dur:10.2,ytm:5.29,oas:91},
+  {id:'BOND_0441',issuer:'HEA441 Corp',sector:'Healthcare',rating:'BBB',weight:1.69,mv:1690000,dur:7.3,ytm:5.76,oas:142},
+  {id:'BOND_0156',issuer:'GOV156 Corp',sector:'Government',rating:'AAA',weight:1.66,mv:1660000,dur:4.8,ytm:4.72,oas:22},
+  {id:'BOND_0298',issuer:'FIN298 Corp',sector:'Financials',rating:'A',weight:1.63,mv:1630000,dur:8.4,ytm:5.39,oas:95},
+  {id:'BOND_0374',issuer:'IND374 Corp',sector:'Industrials',rating:'A',weight:1.61,mv:1610000,dur:6.9,ytm:5.22,oas:89},
+  {id:'BOND_0112',issuer:'CON112 Corp',sector:'Consumer',rating:'BBB',weight:1.58,mv:1580000,dur:9.5,ytm:5.68,oas:138},
+  {id:'BOND_0489',issuer:'TEC489 Corp',sector:'Technology',rating:'A',weight:1.55,mv:1550000,dur:7.2,ytm:5.31,oas:93},
+  {id:'BOND_0201',issuer:'FIN201 Corp',sector:'Financials',rating:'AA',weight:1.53,mv:1530000,dur:5.6,ytm:5.11,oas:49},
+  {id:'BOND_0067',issuer:'HEA067 Corp',sector:'Healthcare',rating:'A',weight:1.51,mv:1510000,dur:8.1,ytm:5.27,oas:88},
+  {id:'BOND_0333',issuer:'UTI333 Corp',sector:'Utilities',rating:'BBB',weight:1.48,mv:1480000,dur:11.3,ytm:5.64,oas:141},
+];
+
+// Order lists per month
+function genOrders(month) {
+  const rngM = seed(month * 137);
+  const orders = [];
+  const n = 18 + Math.floor(rngM()*8);
+  const sectors = ['Financials','Industrials','Utilities','Consumer','Technology','Healthcare'];
+  const ratings = ['AAA','AA','A','BBB'];
+  for(let i=0;i<n;i++){
+    const isBuy = rngM() > 0.45;
+    const mv = (isBuy?1:-1) * Math.round((50000 + rngM()*800000)/1000)*1000;
+    orders.push({
+      bond_id: `BOND_${String(Math.floor(rngM()*500)).padStart(4,'0')}`,
+      sector: sectors[Math.floor(rngM()*6)],
+      rating: ratings[Math.floor(rngM()*4)],
+      action: isBuy?'BUY':'SELL',
+      mv_change: mv,
+      new_weight: (0.3 + rngM()*1.5).toFixed(4),
+      weight_chg: ((isBuy?1:-1)*(0.01+rngM()*0.15)).toFixed(4),
+    });
+  }
+  return orders.sort((a,b)=>Math.abs(b.mv_change)-Math.abs(a.mv_change));
+}
+
+// ── Chart defaults ─────────────────────────────────────────────────────
+Chart.defaults.color = '#6b8caa';
+Chart.defaults.font.family = "'IBM Plex Mono', monospace";
+Chart.defaults.font.size = 11;
+const gridColor = 'rgba(30,48,72,0.6)';
+
+function commonOpts(extra={}) {
+  return {
+    responsive: true, maintainAspectRatio: true,
+    plugins: { legend: { labels: { usePointStyle: true, padding: 16 } } },
+    scales: {
+      x: { grid: { color: gridColor }, ticks: { color: '#6b8caa' } },
+      y: { grid: { color: gridColor }, ticks: { color: '#6b8caa' } },
+    },
+    ...extra
+  };
+}
+
+// ── NAV chart ─────────────────────────────────────────────────────────
+new Chart(document.getElementById('navChart'), {
+  type: 'line',
+  data: {
+    labels: ['Start',...MONTHS],
+    datasets: [
+      { label: 'Portfolio NAV', data: portNav,
+        borderColor: '#00d4aa', backgroundColor: 'rgba(0,212,170,0.07)',
+        fill: true, tension: 0.4, pointRadius: 3, borderWidth: 2.5 },
+      { label: 'Benchmark NAV', data: bmNav,
+        borderColor: '#4a9eff', backgroundColor: 'rgba(74,158,255,0.04)',
+        fill: false, tension: 0.4, pointRadius: 3, borderWidth: 2, borderDash: [5,3] },
+    ]
+  },
+  options: { ...commonOpts(), plugins: { legend: { labels: { usePointStyle:true } } },
+    scales: {
+      x: { grid: { color: gridColor } },
+      y: { grid: { color: gridColor }, ticks: { callback: v=>'$'+(v/1e6).toFixed(1)+'M' } }
+    }
+  }
+});
+
+// ── Rating chart ──────────────────────────────────────────────────────
+new Chart(document.getElementById('ratingChart'), {
+  type: 'bar',
+  data: {
+    labels: ['AAA','AA','A','BBB'],
+    datasets: [
+      { label: 'Portfolio', data: portRating, backgroundColor: 'rgba(0,212,170,0.7)', borderRadius: 5 },
+      { label: 'Benchmark', data: bmRating,   backgroundColor: 'rgba(74,158,255,0.5)',  borderRadius: 5 },
+    ]
+  },
+  options: { ...commonOpts(), scales: {
+    x: { grid:{color:gridColor} },
+    y: { grid:{color:gridColor}, ticks:{callback:v=>v+'%'} }
+  }}
+});
+
+// ── Sector chart ──────────────────────────────────────────────────────
+new Chart(document.getElementById('sectorChart'), {
+  type: 'bar',
+  data: {
+    labels: SECTORS.map(s=>s.substring(0,6)),
+    datasets: [
+      { label: 'Portfolio', data: portSector, backgroundColor: 'rgba(0,212,170,0.75)', borderRadius: 4 },
+      { label: 'Benchmark', data: BM_SECTOR,  backgroundColor: 'rgba(74,158,255,0.5)',  borderRadius: 4 },
+    ]
+  },
+  options: { ...commonOpts(), scales: {
+    x: { grid:{color:gridColor} },
+    y: { grid:{color:gridColor}, ticks:{callback:v=>v+'%'} }
+  }}
+});
+
+// ── Maturity chart ────────────────────────────────────────────────────
+new Chart(document.getElementById('maturityChart'), {
+  type: 'doughnut',
+  data: {
+    labels: ['1–3Y','3–5Y','5–7Y','7–10Y','10Y+'],
+    datasets: [{
+      data: [18.2, 22.1, 19.8, 23.7, 16.2],
+      backgroundColor: ['#00d4aa','#4a9eff','#f0b429','#ff6b6b','#a78bfa'],
+      borderColor: '#111d2e', borderWidth: 2,
+    }]
+  },
+  options: { responsive: true, maintainAspectRatio: true,
+    plugins: { legend: { position: 'right', labels: { usePointStyle:true, padding:12 } } }
+  }
+});
+
+// ── Weight distribution ──────────────────────────────────────────────
+const wts = Array.from({length:30},(_,i)=>(1.87-i*0.035+seed(i*7)()*0.1).toFixed(3));
+new Chart(document.getElementById('weightChart'), {
+  type: 'bar',
+  data: {
+    labels: Array.from({length:30},(_,i)=>`#${i+1}`),
+    datasets: [{
+      label: 'Weight (%)', data: wts,
+      backgroundColor: wts.map(w=>w>1.5?'rgba(0,212,170,0.8)':'rgba(74,158,255,0.6)'),
+      borderRadius: 3,
+    }]
+  },
+  options: { ...commonOpts(), scales: {
+    x:{grid:{color:gridColor}},
+    y:{grid:{color:gridColor},ticks:{callback:v=>v+'%'}}
+  }}
+});
+
+// ── Scatter ───────────────────────────────────────────────────────────
+const scatterData = Array.from({length:80},(_,i)=>{
+  const r=seed(i*31); return {x:+(1+r()*12).toFixed(1), y:+(20+r()*200).toFixed(0), r:3+r()*5};
+});
+new Chart(document.getElementById('scatterChart'), {
+  type: 'bubble',
+  data: {
+    datasets: [{
+      label: 'Holdings (size=weight)',
+      data: scatterData,
+      backgroundColor: 'rgba(0,212,170,0.45)', borderColor: 'rgba(0,212,170,0.8)', borderWidth: 1,
+    }]
+  },
+  options: { ...commonOpts(),
+    scales: {
+      x:{title:{display:true,text:'Modified Duration (y)',color:'#6b8caa'},grid:{color:gridColor}},
+      y:{title:{display:true,text:'OAS Spread (bps)',color:'#6b8caa'},grid:{color:gridColor}}
+    }
+  }
+});
+
+// ── Turnover chart ────────────────────────────────────────────────────
+new Chart(document.getElementById('turnoverChart'), {
+  type: 'bar',
+  data: {
+    labels: MONTHS,
+    datasets: [
+      { label: 'Turnover (%)', data: turnoverPct.slice(1),
+        backgroundColor: 'rgba(240,180,41,0.65)', borderRadius: 4, yAxisID:'y' },
+      { label: 'Trades', data: tradeCounts.slice(1), type:'line',
+        borderColor:'#4a9eff', pointRadius:3, tension:0.3, yAxisID:'y1' },
+    ]
+  },
+  options: { ...commonOpts(),
+    scales: {
+      x:{grid:{color:gridColor}},
+      y:{grid:{color:gridColor},ticks:{callback:v=>v+'%'},max:15},
+      y1:{position:'right',grid:{drawOnChartArea:false},ticks:{color:'#4a9eff'}}
+    }
+  }
+});
+
+// ── TE chart ──────────────────────────────────────────────────────────
+new Chart(document.getElementById('teChart'), {
+  type: 'line',
+  data: {
+    labels: MONTHS,
+    datasets: [{
+      label: 'Tracking Error (bps)', data: trackingError,
+      borderColor: '#ff4d6d', fill: true, backgroundColor:'rgba(255,77,109,0.08)',
+      tension: 0.4, pointRadius: 2, borderWidth: 2
+    }]
+  },
+  options: { ...commonOpts(),
+    scales: {
+      x:{grid:{color:gridColor}},
+      y:{grid:{color:gridColor},ticks:{callback:v=>v+' bps'},min:5,max:12}
+    }
+  }
+});
+
+// ── Return distribution ───────────────────────────────────────────────
+const retBuckets = [-0.3,-0.2,-0.1,0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8];
+const retCounts  = [0,1,1,2,3,2,2,2,1,1,0,0];
+new Chart(document.getElementById('retDistChart'), {
+  type: 'bar',
+  data: {
+    labels: retBuckets.map(v=>v.toFixed(1)+'%'),
+    datasets: [{
+      label: 'Monthly Returns',
+      data: retCounts,
+      backgroundColor: retBuckets.map(v=>v>=0?'rgba(0,212,170,0.7)':'rgba(255,77,109,0.7)'),
+      borderRadius: 4,
+    }]
+  },
+  options: { ...commonOpts(), scales: { x:{grid:{color:gridColor}}, y:{grid:{color:gridColor}} } }
+});
+
+// ── Duration chart ────────────────────────────────────────────────────
+new Chart(document.getElementById('durationChart'), {
+  type: 'line',
+  data: {
+    labels: MONTHS,
+    datasets: [
+      { label: 'Portfolio Duration', data: durationSeries,
+        borderColor: '#f0b429', fill: false, tension: 0.4, pointRadius: 3, borderWidth: 2 },
+      { label: 'Upper Band (8.92y)', data: Array(12).fill(8.92),
+        borderColor: 'rgba(74,158,255,0.4)', borderDash:[4,4], pointRadius:0, borderWidth:1 },
+      { label: 'Benchmark (8.42y)', data: Array(12).fill(8.42),
+        borderColor: 'rgba(74,158,255,0.8)', borderDash:[6,3], pointRadius:0, borderWidth:1.5 },
+      { label: 'Lower Band (7.92y)', data: Array(12).fill(7.92),
+        borderColor: 'rgba(74,158,255,0.4)', borderDash:[4,4], pointRadius:0, borderWidth:1 },
+    ]
+  },
+  options: { ...commonOpts(),
+    scales: {
+      x:{grid:{color:gridColor}},
+      y:{grid:{color:gridColor},min:7.5,max:9.2,ticks:{callback:v=>v+'y'}}
+    }
+  }
+});
+
+// ── Holdings table ────────────────────────────────────────────────────
+const ratingTagClass = {AAA:'tag-aaa',AA:'tag-aa',A:'tag-a',BBB:'tag-bbb'};
+document.getElementById('holdingsTable').innerHTML = topHoldings.map((h,i)=>`
+  <tr>
+    <td style="color:var(--muted)">${i+1}</td>
+    <td style="color:var(--accent)">${h.id}</td>
+    <td>${h.issuer}</td>
+    <td><span class="tag tag-aa" style="font-size:9px">${h.sector}</span></td>
+    <td><span class="tag ${ratingTagClass[h.rating]}">${h.rating}</span></td>
+    <td style="color:var(--text);font-weight:600">${h.weight.toFixed(2)}%</td>
+    <td>$${(h.mv/1000).toFixed(0)}K</td>
+    <td>${h.dur.toFixed(1)}y</td>
+    <td>${h.ytm.toFixed(2)}%</td>
+    <td>${h.oas} bps</td>
+  </tr>`).join('');
+
+// ── Month selector & order list ───────────────────────────────────────
+const monthSel = document.getElementById('monthSelector');
+MONTHS.forEach((m,i)=>{
+  const btn = document.createElement('button');
+  btn.className = 'month-btn' + (i===0?' active':'');
+  btn.textContent = m;
+  btn.onclick = ()=>{ document.querySelectorAll('.month-btn').forEach(b=>b.classList.remove('active')); btn.classList.add('active'); renderOrders(i+1); };
+  monthSel.appendChild(btn);
+});
+
+function renderOrders(month) {
+  const orders = genOrders(month);
+  const buys  = orders.filter(o=>o.action==='BUY').length;
+  const sells = orders.filter(o=>o.action==='SELL').length;
+  document.getElementById('order-count').textContent = `${orders.length} ORDERS`;
+  document.getElementById('orderList').innerHTML = orders.map((o,i)=>`
+    <div class="order-row" style="animation-delay:${i*0.03}s">
+      <span class="order-bond">${o.bond_id}</span>
+      <span class="tag ${o.action==='BUY'?'tag-buy':'tag-sell'}">${o.action}</span>
+      <span class="order-sector">${o.sector} · ${o.rating}</span>
+      <span class="order-mv ${o.action.toLowerCase()}">$${Math.abs(o.mv_change/1000).toFixed(0)}K</span>
+      <span class="order-wt">${o.new_weight}%</span>
+    </div>`).join('');
+}
+renderOrders(1);
+
+// ── Nav tabs ──────────────────────────────────────────────────────────
+function showSection(id) {
+  document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  event.target.classList.add('active');
+}
+
+// ── Stagger animation delays ──────────────────────────────────────────
+document.querySelectorAll('.metric-card').forEach((c,i)=>c.style.animationDelay=`${i*0.07}s`);
+document.querySelectorAll('.panel').forEach((p,i)=>p.style.animationDelay=`${i*0.08+0.1}s`);
+</script>
+</body>
+</html>
